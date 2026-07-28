@@ -1,0 +1,278 @@
+#!/bin/bash
+
+PROJECT_DIR="MarketerApp"
+mkdir -p $PROJECT_DIR/.github/workflows
+mkdir -p $PROJECT_DIR/app/src/main/java/com/asjadland/marketer
+mkdir -p $PROJECT_DIR/app/src/main/res/layout
+mkdir -p $PROJECT_DIR/app/src/main/res/values
+mkdir -p $PROJECT_DIR/app/src/main/res/drawable
+
+# 1. ملف settings.gradle
+cat > $PROJECT_DIR/settings.gradle << 'EOF'
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+rootProject.name = "MarketerApp"
+include ':app'
+EOF
+
+# 2. ملف build.gradle (الجذر)
+cat > $PROJECT_DIR/build.gradle << 'EOF'
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:7.4.2'
+    }
+}
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}
+EOF
+
+# 3. ملف app/build.gradle
+cat > $PROJECT_DIR/app/build.gradle << 'EOF'
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.asjadland.marketer'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.asjadland.marketer"
+        minSdk 21
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+}
+EOF
+
+# 4. ملف AndroidManifest.xml
+cat > $PROJECT_DIR/app/src/main/AndroidManifest.xml << 'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.asjadland.marketer">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@drawable/ic_launcher"
+        android:label="ASJAD Land"
+        android:theme="@style/Theme.AppCompat.Light.NoActionBar"
+        android:usesCleartextTraffic="true">
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="orientation|screenSize"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
+EOF
+
+# 5. ملف MainActivity.java (معدل ليسألك عن الرابط)
+cat > $PROJECT_DIR/app/src/main/java/com/asjadland/marketer/MainActivity.java << 'EOF'
+package com.asjadland.marketer;
+
+import android.os.Bundle;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.webkit.WebChromeClient;
+import android.webkit.CookieManager;
+import android.webkit.WebSettings;
+import android.os.Build;
+import android.content.SharedPreferences;
+import android.app.AlertDialog;
+import android.widget.EditText;
+import android.widget.Toast;
+import androidx.appcompat.app.AppCompatActivity;
+
+public class MainActivity extends AppCompatActivity {
+    private WebView webView;
+    private SharedPreferences prefs;
+    private static final String PREF_NAME = "MarketerPrefs";
+    private static final String KEY_URL = "base_url";
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        prefs = getSharedPreferences(PREF_NAME, MODE_PRIVATE);
+        String savedUrl = prefs.getString(KEY_URL, null);
+
+        webView = findViewById(R.id.webView);
+        WebSettings webSettings = webView.getSettings();
+        webSettings.setJavaScriptEnabled(true);
+        webSettings.setDomStorageEnabled(true);
+        webSettings.setCacheMode(WebSettings.LOAD_DEFAULT);
+        webSettings.setAllowFileAccess(true);
+        webSettings.setAllowContentAccess(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
+        }
+        CookieManager.getInstance().setAcceptCookie(true);
+
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                view.loadUrl(url);
+                return true;
+            }
+        });
+        webView.setWebChromeClient(new WebChromeClient());
+
+        if (savedUrl != null && !savedUrl.isEmpty()) {
+            webView.loadUrl(savedUrl);
+        } else {
+            showUrlDialog();
+        }
+    }
+
+    private void showUrlDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("أدخل رابط الخادم");
+        builder.setMessage("أدخل عنوان الخادم (مثل http://192.168.1.100:5000/marketer_dashboard)");
+
+        final EditText input = new EditText(this);
+        input.setHint("http://10.0.2.2:5000/marketer_dashboard");
+        builder.setView(input);
+
+        builder.setPositiveButton("حفظ وتشغيل", (dialog, which) -> {
+            String url = input.getText().toString().trim();
+            if (!url.isEmpty()) {
+                prefs.edit().putString(KEY_URL, url).apply();
+                webView.loadUrl(url);
+            } else {
+                Toast.makeText(MainActivity.this, "الرجاء إدخال رابط صحيح", Toast.LENGTH_SHORT).show();
+                showUrlDialog();
+            }
+        });
+        builder.setNegativeButton("إلغاء", (dialog, which) -> finish());
+        builder.setCancelable(false);
+        builder.show();
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (webView.canGoBack()) {
+            webView.goBack();
+        } else {
+            super.onBackPressed();
+        }
+    }
+}
+EOF
+
+# 6. ملف activity_main.xml
+cat > $PROJECT_DIR/app/src/main/res/layout/activity_main.xml << 'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+    <WebView
+        android:id="@+id/webView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+</LinearLayout>
+EOF
+
+# 7. ملف colors.xml
+cat > $PROJECT_DIR/app/src/main/res/values/colors.xml << 'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#3F51B5</color>
+    <color name="colorPrimaryDark">#303F9F</color>
+    <color name="colorAccent">#FF4081</color>
+</resources>
+EOF
+
+# 8. أيقونة التطبيق (متجهة بسيطة)
+cat > $PROJECT_DIR/app/src/main/res/drawable/ic_launcher.xml << 'EOF'
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#2E7D32"
+        android:pathData="M0,0h108v108h-108z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,20 L74,30 L74,50 L54,60 L34,50 L34,30 L54,20 Z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,60 L74,50 L74,70 L54,80 L34,70 L34,50 L54,60 Z"/>
+</vector>
+EOF
+
+# 9. ملف GitHub Actions (البناء التلقائي)
+cat > $PROJECT_DIR/.github/workflows/build.yml << 'EOF'
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Build with Gradle
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease
+        shell: bash
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: app/build/outputs/apk/release/*.apk
+EOF
+
+echo "✅ تم إنشاء المجلد $PROJECT_DIR بنجاح على سطح المكتب!"
+echo "📂 ارفع هذا المجلد كاملاً إلى GitHub (رابط الإنشاء في الشرح أدناه)."
